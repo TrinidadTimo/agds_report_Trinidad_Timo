@@ -1,0 +1,101 @@
+---
+title: "Report_Excersise_1"
+author: "Timo Trinidad"
+date: "2025-03-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Importing required libraries: 
+```{r}
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(readr)
+library(stringr)
+library(purrr)
+```
+
+### Preprocessing in Excel: 
+  - Eliminating string descriptions on the top (deleting first three rows).
+  - Harmonising variable names (merging names, which were split over several cells).
+  - Processed sheet 1 has been saved seperately as csv.
+  
+### Loading the data set and cleaning: 
+
+```{r}
+setwd("./report_1")
+df_soil_carbon_stocks_S1 <- read_delim("C:/Users/timot/OneDrive - Universitaet Bern/Studium/Geographie/2. Aufbaustudium/AGDS I/agds_report_Trinidad_Timo/Report_1/Data/soil_carbon_stocks_S1.csv", 
+    delim = "\t", trim_ws = TRUE)
+
+# clean for empty rows#
+for( i in 1:nrow(df_soil_carbon_stocks_S1)) {
+  if (all(is.na(df_soil_carbon_stocks_S1[i,1:ncol(df_soil_carbon_stocks_S1)]))) {
+    df_soil_carbon_stocks_S1 <- df_soil_carbon_stocks_S1[-i,]
+}
+
+}
+nrow(df_soil_carbon_stocks_S1 )
+
+#filling empty cells in "Experiment" column: 
+
+for (i in 1:(nrow(df_soil_carbon_stocks_S1) - 1)) {
+  if (is.na(df_soil_carbon_stocks_S1[i+1,1])) {
+    df_soil_carbon_stocks_S1[i+1,1] <- df_soil_carbon_stocks_S1[i,1]
+  } else {
+    next
+  }
+}
+
+# Making sure, numbers are stored as numeric objects: 
+sapply(df_soil_carbon_stocks_S1, class) # looks okey.
+
+```
+
+
+### Aggregation by experiment: 
+
+#### Preparation: 
+```{r}
+# Creating variable for log-response ratio:
+df_soil_carbon_stocks_S1$log_response_ration <-  log(df_soil_carbon_stocks_S1$`g C m-2 mean increased CO2`/ df_soil_carbon_stocks_S1$`g C m-2 mean ambient CO2`)
+
+# creating variable indicating phase: 
+df_soil_carbon_stocks_S1$Phase <- df_soil_carbon_stocks_S1$`Time (years)`
+df_soil_carbon_stocks_S1 <- df_soil_carbon_stocks_S1 |> 
+  mutate(Phase = case_when(
+    Phase < 3 ~ 1,
+    Phase >= 3 & Phase <= 6 ~ 2,
+    Phase > 6 ~ 3
+  ))
+
+# defining the Phase-variable as factor (and naming it's values):
+df_soil_carbon_stocks_S1$Phase <- factor(df_soil_carbon_stocks_S1$Phase, labels = c("early", "mid", "late"))
+
+```
+
+#### Aggregation by experiment and phase through mean: 
+
+```{r}
+df_log_response_ratio_aggregate <- df_soil_carbon_stocks_S1 |> group_by(Phase) |> summarise(log_response_ration = mean(log_response_ration))
+```
+
+```{r}
+knitr::kable(df_log_response_ratio_aggregate)
+
+```
+
+### Interpretation: 
+
+- What is the data about?
+Building on the idea of stimulated plant growth through increased atmospheric CO2 concentrations the paper wants to answer if with increased biomass production also the soil C sink increases, which would eventually add to reduce the CO2 in the atmosphere again, building a crucial feedback within the earth system. To answer this question Van Groeningen et al. conduct a meta-analysis over 53 experiments, in which C-levels in soils exposed to increased CO2-levels were compared to soils under "normal" levels (for different depths and time steps).
+
+- What do I expect my analysis to show?
+The question regarding whether the new soil C balance under increased CO2 levels is higher or lower than under normal CO2 conditions depends on whether C inputs from plant growth increases more than C loses from increased respiration (therefore increase in C turnover). I assume this to be the case, thus formulating the following working hypothesis: 
+Under increased CO2 concentrations C soil concentration increases until a new balance concentration is reached. 
+
+- How do I interpret my results?
+Our results show the mean log respone ratios for the three phases aggregated over all experiments. A positive (negative) log-response ratio indicates here a stronger (weaker) increase in soil C under increased CO2 conditions than under normal conditions. For the first 
