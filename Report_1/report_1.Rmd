@@ -75,6 +75,7 @@ df_soil_carbon_stocks_S1 <- df_soil_carbon_stocks_S1 |>
 # defining the Phase-variable as factor (and naming it's values):
 df_soil_carbon_stocks_S1$Phase <- factor(df_soil_carbon_stocks_S1$Phase, labels = c("early", "mid", "late"))
 
+?cut
 ```
 
 #### Aggregation by experiment and phase through mean: 
@@ -98,4 +99,4 @@ The question regarding whether the new soil C balance under increased CO2 levels
 Under increased CO2 concentrations C soil concentration increases until a new balance concentration is reached. 
 
 - How do I interpret my results?
-Our results show the mean log respone ratios for the three phases aggregated over all experiments. A positive (negative) log-response ratio indicates here a stronger (weaker) increase in soil C under increased CO2 conditions than under normal conditions. For the first 
+Our results show the mean log respone ratios for the three phases aggregated over all experiments. A positive (negative) log-response ratio indicates here a stronger (weaker) increase in soil C under increased CO2 conditions than under normal conditions. For the first ...

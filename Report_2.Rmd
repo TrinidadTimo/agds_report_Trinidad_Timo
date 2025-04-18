@@ -1,0 +1,67 @@
+---
+title: "report_2"
+author: "Timo Trinidad"
+date: "2025-03-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Importing needed packages: 
+
+```{r}
+library(ggplot2)
+library(readr)
+library(lubridate)
+library(dplyr)
+
+```
+
+```{r}
+
+airquality <- tibble(datasets::airquality)
+
+airquality$Month <- as.factor(airquality$Month)
+
+```
+
+
+```{r}
+
+(airquality$Sol - mean(airquality$Sol, na.rm = TRUE))/sd(airquality$Sol, na.rm = TRUE)
+?sd
+
+
+ggplot(data = subset(airquality, !is.na(Sol) & !is.na(Ozone) & !is.na(Temp)) , aes(x= (Wind - mean(Wind))/sd(Wind), y = (Ozone - mean(Ozone))/sd(Ozone), colour = Temp)) + 
+  geom_point() +
+    
+?subset    
+
+var()
+airquality <- airquality |> rename("Sol" = "Solar.R")
+
+head(airquality)
+
+```
+
+```{r}
+
+airquality |> 
+  mutate( Ozone = (Ozone - mean(Ozone))/ sd(Ozone), Temp = (Temp - mean(Temp)) / sd(Temp) ) |>
+  ggplot(aes(x = 1:nrow(airquality), y = Ozone)) +
+  geom_line() +
+  geom_line( aes(group = Sol), colour = "red")
+
+class(airquality$Sol)
+```
+
+TO DO: 
+
+- Cleaning: 
+
+> Construction continuous date for timeseries (Data for May 1, 1973 - Sept 30, 1973)
+> Month as factor
+> Transform temperature
