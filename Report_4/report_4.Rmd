@@ -85,11 +85,10 @@ AIC_old = -1
         R_max <- R
         p <- i
       }
-      if (i == ncol(vars_clean)) {
-        mod_pred[j] <- colnames(vars_clean)[p]
-      }
+      
       AIC = nrow(vars_clean)* log(sum(mod$residuals^2)/nrow(vars_clean)) + 2*(length(mod_pred) + 1) # just "+1 as mod_pred also includes dependent variable.
-        }
+    }
+    mod_pred[j] <- colnames(vars_clean)[p]
     if (AIC > AIC_old & AIC_old >0) {
       mod_pred <- mod_pred[-length(mod_pred)]
       break
