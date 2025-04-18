@@ -49,13 +49,23 @@ Besides that I'm also not considering siteid (obviously) and TIMESTEP (as we hav
 
 This selection yields a sample of n= 15442 observations (which are ~67% of the initial sample) over 14 variables.
 
+# Exercise 1: 
+```{r}
+
+```
+
+
+
+
+
+
+# Exercise 2: 
 # Cleaning: 
 
 ```{r}
-vars_clean <- na.omit(vars)
+vars_clean <- vars
 ```
-
-# Model Algorith:
+## Model Algorith:
 
 ```{r}
 mod_pred <- c(colnames(vars_clean)[1])
@@ -69,7 +79,7 @@ AIC_old = -1
       if (length(mod_pred) < 3) {
        mod <- lm(as.formula(paste(mod_pred, collapse = "~")), data = vars_clean) 
       } else {
-      mod <- lm(as.formula(paste(mod_pred[1], "~",paste(mod_pred[-1], collapse ="+"))), data = vars_clean) }
+      mod <- lm(as.formula(paste(mod_pred[1], "~",paste(mod_pred[-1], collapse ="+"))), data = vars_clean, na.action =  na.omit) }
       R <- summary(mod)$r.squared
       if (R > R_max) {
         R_max <- R
@@ -88,6 +98,13 @@ AIC_old = -1
     }
   } 
 
-#print("The best model is:", mod_pred[1], "=", paste(mod_pred[-1], collapse = "+"), sep = " ")
+summary(mod)
 
 ```
+
+Höherer AIC-Wert nach Aufrufen von na.omit() direkt in Regressionsformel kommt zustande, da n gestiegen ist. Werden nun zwei zusätzliche Prädikatoren berücksichtigt. Adjusted R^2 steigt leicht. Interessant auch; waren vorher alle Predikatioren signifikant, sind es zwei nun nicht mehr. Was macht man mit diesen? Ist dies Kolinearität? Zeigt, dass es problematisch sein kann, AIC-Wert absolut zu betrachten. Sollte relativ zu einem anderen AIC-Wert betrachtet werden (grösser oder kleiner)
+
+## Result visualization: 
+- fitted Values against actual values
+- residual plot
+- 
