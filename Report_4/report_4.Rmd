@@ -9,7 +9,85 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r}
+library(ggplot2)
+library(readr)
+library(lubridate)
+library(dplyr)
+```
+
+
+# Downloading the Data:
+```{r}
+url <- "https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv"
+
+flux_data <- read.table(
+  url,
+  header = TRUE,
+  sep = ","
+)
+
+```
+
+# Model Variable selection:
+```{r}
+table(flux_data)
+
+sum(!is.na(flux_data$LW_IN_F_MDS))
+dim(na.omit(flux_data[,-c(1,2,12)]))
+
+
+vars <- flux_data[,-c(1,2,12)]
+vars <- vars[,c(13,1:12,14)] #rearranging columns
+
+```
+
+- In the course of a first look on the datatable I noticed that the gapfilled lonwave radiation (LW_IN_F_MDS) seems to have quite some missing values. 
+As the code in the following line shows, it only contains 11954 non-missing values. As the following regression models demands equal numbers of observations over all included variables, including LW_IN_F_MDS would ineviteably imply losing almost half of all observations over all variables. Based on this concern and drawing on the fact that the incoming longwave radiation is also covered by LW_IN_F, I decide to leave LW_IN_F_MDS out of the vector of the model variables. 
+
+Besides that I'm also not considering siteid (obviously) and TIMESTEP (as we have the most physical variables causally linked to GPP and varying over time included, the effect of a time variable will be very small/insignificant). 
+
+This selection yields a sample of n= 15442 observations (which are ~67% of the initial sample) over 14 variables.
+
+# Cleaning: 
 
 ```{r}
+vars_clean <- na.omit(vars)
+```
+
+# Model Algorith:
+
+```{r}
+mod_pred <- c(colnames(vars_clean)[1])
+R_max = 0
+AIC_old = -1
+
+  for (j in 2:(ncol(vars_clean))) {
+    p = 0
+    for (i in 2:ncol(vars_clean)) {
+      mod_pred[j] <- colnames(vars_clean)[i]
+      if (length(mod_pred) < 3) {
+       mod <- lm(as.formula(paste(mod_pred, collapse = "~")), data = vars_clean) 
+      } else {
+      mod <- lm(as.formula(paste(mod_pred[1], "~",paste(mod_pred[-1], collapse ="+"))), data = vars_clean) }
+      R <- summary(mod)$r.squared
+      if (R > R_max) {
+        R_max <- R
+        p <- i
+      }
+      if (i == ncol(vars_clean)) {
+        mod_pred[j] <- colnames(vars_clean)[p]
+      }
+      AIC = nrow(vars_clean)* log(sum(mod$residuals^2)/nrow(vars_clean)) + 2*(length(mod_pred) + 1) # just "+1 as mod_pred also includes dependent variable.
+        }
+    if (AIC > AIC_old & AIC_old >0) {
+      mod_pred <- mod_pred[-length(mod_pred)]
+      break
+    } else {
+      AIC_old <- AIC
+    }
+  } 
+
+#print("The best model is:", mod_pred[1], "=", paste(mod_pred[-1], collapse = "+"), sep = " ")
 
 ```
