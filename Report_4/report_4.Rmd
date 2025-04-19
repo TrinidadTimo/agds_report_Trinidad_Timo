@@ -14,6 +14,7 @@ library(ggplot2)
 library(readr)
 library(lubridate)
 library(dplyr)
+library(patchwork)
 ```
 
 
@@ -31,7 +32,7 @@ flux_data <- read.table(
 
 # Model Variable selection:
 ```{r}
-table(flux_data)
+View(flux_data)
 
 sum(!is.na(flux_data$LW_IN_F_MDS))
 dim(na.omit(flux_data[,-c(1,2,12)]))
@@ -51,44 +52,75 @@ This selection yields a sample of n= 15442 observations (which are ~67% of the i
 
 # Exercise 1: 
 ```{r}
+plot_vec <- list()
+metrics <- c()
+
+for (i in 2:length(vars)) {
+  mod_1 <- lm(vars[,1] ~ vars[,i], na.action = na.omit)
+  mod_sum <- summary(mod_1)
+  
+  metrics["R^2"] <- mod_sum$r.squared
+  metrics["RMSE"] <- sqrt(mean(mod_sum$residuals^2))
+  metrics["Bias"] <- mean(mod_sum$residuals)
+  metrics["Slope"] <- mod_sum$coefficients[2,1]
+  
+  df_plot <- data.frame(
+    Y = vars[as.numeric(rownames(mod_1$model)),1],
+    Y_hat = mod_1$fitted.values
+  )
+  
+  plot_vec[[i-1]] <- ggplot(df_plot, aes(x = Y_hat, y = Y)) +
+    geom_point(alpha = 0.1) +
+    labs(
+      x = expression(hat(Y)),
+      y = "Y",
+      title = colnames(vars)[i],
+      subtitle = paste(paste(names(metrics), round(metrics, 3), sep = " = "), collapse = ", ")
+    ) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "darkgreen") +
+    geom_abline(intercept = mod_sum$coefficients[1,1], slope = mod_sum$coefficients[2,1], color = "red") + 
+    coord_cartesian(xlim = c(-5,15), ylim = c(-5,15)) +
+    theme_classic() +
+    theme(plot.subtitle = element_text(size = 7))
+}
 
 ```
 
+Visualisation:
 
-
-
-
-
-# Exercise 2: 
-# Cleaning: 
-
-```{r}
-vars_clean <- vars
+```{R}
+wrap_plots(plot_vec[11:12], ncol = 2)
 ```
+
+Analysis: 
+
+
+
+# Exercise:
 ## Model Algorith:
 
 ```{r}
-mod_pred <- c(colnames(vars_clean)[1])
+mod_pred <- c(colnames(vars)[1])
 R_max = 0
 AIC_old = -1
 
-  for (j in 2:(ncol(vars_clean))) {
+  for (j in 2:(ncol(vars))) {
     p = 0
-    for (i in 2:ncol(vars_clean)) {
-      mod_pred[j] <- colnames(vars_clean)[i]
+    for (i in 2:ncol(vars)) {
+      mod_pred[j] <- colnames(vars)[i]
       if (length(mod_pred) < 3) {
-       mod <- lm(as.formula(paste(mod_pred, collapse = "~")), data = vars_clean) 
+       mod_2 <- lm(as.formula(paste(mod_pred, collapse = "~")), data = vars) 
       } else {
-      mod <- lm(as.formula(paste(mod_pred[1], "~",paste(mod_pred[-1], collapse ="+"))), data = vars_clean, na.action =  na.omit) }
-      R <- summary(mod)$r.squared
+      mod_2 <- lm(as.formula(paste(mod_pred[1], "~",paste(mod_pred[-1], collapse ="+"))), data = vars, na.action =  na.omit) }
+      R <- summary(mod_2)$r.squared
       if (R > R_max) {
         R_max <- R
         p <- i
       }
       
-      AIC = nrow(vars_clean)* log(sum(mod$residuals^2)/nrow(vars_clean)) + 2*(length(mod_pred) + 1) # just "+1 as mod_pred also includes dependent variable.
+      AIC = nrow(vars)* log(sum(mod_2$residuals^2)/nrow(vars)) + 2*(length(mod_pred) + 1) # just "+1 as mod_pred also includes dependent variable.
     }
-    mod_pred[j] <- colnames(vars_clean)[p]
+    mod_pred[j] <- colnames(vars)[p]
     if (AIC > AIC_old & AIC_old >0) {
       mod_pred <- mod_pred[-length(mod_pred)]
       break
@@ -97,7 +129,7 @@ AIC_old = -1
     }
   } 
 
-summary(mod)
+summary(mod_2)
 
 ```
 
@@ -107,3 +139,7 @@ Höherer AIC-Wert nach Aufrufen von na.omit() direkt in Regressionsformel kommt 
 - fitted Values against actual values
 - residual plot
 - 
+
+
+Analysis: 
+
