@@ -43,12 +43,11 @@ vars <- vars[,c(13,1:12,14)] #rearranging columns
 
 ```
 
-- In the course of a first look on the datatable I noticed that the gapfilled lonwave radiation (LW_IN_F_MDS) seems to have quite some missing values. 
-As the code in the following line shows, it only contains 11954 non-missing values. As the following regression models demands equal numbers of observations over all included variables, including LW_IN_F_MDS would ineviteably imply losing almost half of all observations over all variables. Based on this concern and drawing on the fact that the incoming longwave radiation is also covered by LW_IN_F, I decide to leave LW_IN_F_MDS out of the vector of the model variables. 
+- In the course of a first look on the datatable I noticed that the gapfilled longwave radiation (LW_IN_F_MDS) seems to have quite some missing values. 
+This is backed by the code in the following line, which shows it only contains 11954 non-missing values. As the following regression models demands equal numbers of observations over all included variables, including LW_IN_F_MDS would ineviteably imply losing almost half of all observations over all included variables. Based on this concern and drawing on the fact that the incoming longwave radiation is also covered by LW_IN_F, I decide to leave LW_IN_F_MDS out of the vector of the model variables. 
+Besides that I'm also not considering siteid (obviously) and TIMESTEP (as we have the most physical variables causally linked to GPP and varying over time included, I assume in the end the effect of a time variable will be very small/insignificant). 
 
-Besides that I'm also not considering siteid (obviously) and TIMESTEP (as we have the most physical variables causally linked to GPP and varying over time included, the effect of a time variable will be very small/insignificant). 
-
-This selection yields a sample of n= 15442 observations (which are ~67% of the initial sample) over 14 variables.
+This selection yields a sample of n= 15442 observations (which are ~67% of the initial sample), when including all 14 variables.
 
 # Exercise 1: 
 ```{r}
@@ -89,14 +88,30 @@ for (i in 2:length(vars)) {
 Visualisation:
 
 ```{R}
-wrap_plots(plot_vec[11:12], ncol = 2)
+wrap_plots(plot_vec, ncol = 4)
 ```
 
 Analysis: 
+For analysing my results I refer to the following equation: 
+GPP = PPFD * fAPAR * LUE, 
+where PPFD measures the solar radiation (photon) flux, fAPAR denotes the fraction of absorbed potosynthetically active radiation and LUE stands for the Light use efficency describing the efficency with which absorbed photons are used to convert atmospheric C02 into C in the form of sugars. 
 
+Hypothesis: I expect the highest R^2 values for variables, which depict one of the components of the equation above - directly or as (high correlated) proxis. For variables, which do not have a (strong) relation to one of the equation's componenents I expect small values for R^2.
 
+Results: Wenig überraschend wird mit 0.452 der höchste R^2-Wert von der incomming photosynthetic photon flux density (PPFD_IN) erzielt, einer Variable die direkt in der GPP-erklärenden Gleichung abgebildet ist. Darauffolgend erklärt die incomming shortwave radiation (SW_IN_F/SW_IN_F_MDS) 43% der Varianz der GPP-Werte. Ihr relativ hoher R^2-Wert erkläre ich mir dadurch, dass sie stark korreliert ist mit PPFD. Dies lässt sich prüfen, in dem wir eine bivariate Regression mit beiden erklärenden Variablen durchführen. Ich erwarte für diese, dass der Koeffizient der kurzwelligen Strahlung nicht mehr signifikant ist, da der omitted variable bias, der in der univariaten Regression in Hinblick auf die photon flux density bestand, nun verschwindet. 
 
-# Exercise:
+```{r}
+summary(lm(GPP_NT_VUT_REF ~ PPFD_IN + SW_IN_F ,data = vars, na.action = na.omit))
+```
+Die Resultate stützen also meine Annahme. 
+Schliesslich wird mit 0.39 der dritt höchste R^2-Wert von der Lufttemperatur (TA_F/TA_F_MDS) erzielt. Dies könnte dadurch zu Stande kommen als dass LUE u.a. von der Temperatur abhängt. Wie viel CO2 eine Pflanze assimiliert ist durch die Öffnung der Stomata bedingt. Diese wird u.a. durch die Wasserdampfabgabe reguliert, welche - da bei höheren Temperaturen der Sättigungsdampfdruck der atmosphärischen Luft steigt und damit der Gradient zwischen Wasserdampfdruck im Innern des Blattes und atmosphärischem Dampfdruck zunimmt - bei höheren Temperaturen zunimmt (dies gilt innerhalb eines bestimmten Temperaturintervalls resp. wenn Pflanze nicht unter Wasserstress steht). Gegen diese Begründung (allein) spricht, dass die Regression mit der CO2-Konzentration, die auf ähnliche Weise mit der photosynthetischen Aktivität zusammenhängen sollte wie die Temperatur, einen deutlich tieferen R^2-Wert aufweist. Der tiefen R^2-Wert des Vapor Pressure deficit (VPD_F/VPD_F_MDS) könnte ein weiteres Gegenargument sein, könnte jedoch auch auf einen nicht-linearen Zusammenhang zurückzuführen sein (Sättigungsdampfdruck steigt exponentiell in Temperatur)
+Ein anderer Erklärungsansatz wäre, dass die Temperatur vor allem mit der solaren Einstrahlung korreliert und auf diesem Weg zu dessen R^2 kommt. Dagegen spricht jedoch, dass in der bivariaten Regression mit der solaren Einstrahlung, der Schätzkoeffizient der Temperatur signifikant bleibt. 
+
+In Hinblick auf die anderen Variablen - precipitation (P_F), windspeed (WS_F), atmospheric pressure (PA_F), friction velocity (USTAR) - so weisen diese einen Wert von R^2 < 0.1 auf, erklären die Varianz in den GPP-Daten damit kaum. Diese Variablen können zwar mit den Faktoren in der oberen Gleichung zusammen, jedoch ist die Korrelation wohl sehr gering/indirekt (bspw. hängt Niederschlag mit atmospärischem Feuchtigkeitsgehalt zusammen, der sich wiederum auf den Wasserdampfdruck-Gradient zwischen Blattoberfläche- und Blattinnern auswirkt, welcher wiederum einer der Faktoren ist, der Stomata-Öffnung reguliert, welches sich auf LUE auswirkt).
+
+Schliesslich werden wohl alle R^2-Werte durch die geringe Varianz in den GPP-Werten gedrückt (sd = 3.2): Je kleiner die Varianz in den Werten der abhängigen Variable, desto schwieriger ist es, diese durch eine andere Varianz bedeutend abzubilden. 
+
+# Exercise 2:
 ## Model Algorith:
 
 ```{r}
@@ -129,17 +144,28 @@ AIC_old = -1
     }
   } 
 
-summary(mod_2)
+mod_fin<- lm(paste(mod_pred[1], " ~ ", paste(mod_pred[-1], collapse = " + ")), data = vars)
+summary(mod_fin)
 
 ```
 
 Höherer AIC-Wert nach Aufrufen von na.omit() direkt in Regressionsformel kommt zustande, da n gestiegen ist. Werden nun zwei zusätzliche Prädikatoren berücksichtigt. Adjusted R^2 steigt leicht. Interessant auch; waren vorher alle Predikatioren signifikant, sind es zwei nun nicht mehr. Was macht man mit diesen? Ist dies Kolinearität? Zeigt, dass es problematisch sein kann, AIC-Wert absolut zu betrachten. Sollte relativ zu einem anderen AIC-Wert betrachtet werden (grösser oder kleiner)
 
-## Result visualization: 
-- fitted Values against actual values
-- residual plot
-- 
+```{r}
+plot(x = mod_fin$fitted.values , y = vars[as.numeric(rownames(mod_fin$model)),1], xlim = c(-5,15), ylim = c(-5,15), main = "Final Model", sub = paste(paste("R^2 =", round(summary(mod_fin)$r.squared, digits = 3)), paste("RMSE =", round(sqrt(mean(summary(mod_fin)$residuals^2)), digits = 3)), collapse = ", "), xlab = "Ŷ", ylab = "Y")
+abline(a= 0, b=1, col = "darkgreen")
 
+```
+
+Visualisation: 
+- Just last model or each one separately plotted?
 
 Analysis: 
+Ich habe als Resultat folgendes Modell erhalten: 
 
+```{r}
+paste(mod_pred[1], " ~ ", paste(mod_pred[-1], collapse = " + "))
+
+```
+Meine Analyse orientiert sich im folgenden wiederum an der in Aufgabe 1 angeführten Gleichung.
+Auf PPFD, das in der univariaten Regression den höchten R^2-Wert erzielte, wurde die langwellige Einstrahlung in die bivariate Regression aufgenommen. Dies ist nun interessant, da die univariate Regression mit der langwelligen Einstrahlung bloss einen tiefen R^2-Value von 0.17 aufwies. Dies könnte umgekehrt beudeuten, dass Variablen, die in der univariaten Regression höhere R^2 Werte lieferten - shortwave radiation, Lufttemperatur - stark mit PPFD korrelieren, so dass sie nur wenig "neue Varianz" in das Modell bringen. (In Hinblick auf den Einfluss der Temperatur würde dies meinen alternativen Erklärungsansatz von oben stützten, dass diese mit GPP korreliert, weil sie auch mit der solaren Einstrahlung korreliert.) Als dritte erklärende Variable wird das vapor pressure deficit aufgenommen, erst danach die Lufttemperatur und die kurzwellige Einstrahlung.
