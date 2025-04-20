@@ -151,13 +151,14 @@ mod_fin<- lm(paste(mod_pred[1], " ~ ", paste(mod_pred[-1], collapse = " + ")), d
 summary(mod_fin)
 
 ```
+
 ##### XXXXXXXXXXXXX
 Höherer AIC-Wert nach Aufrufen von na.omit() direkt in Regressionsformel kommt zustande, da n gestiegen ist. Werden nun zwei zusätzliche Prädikatoren berücksichtigt. Adjusted R^2 steigt leicht. Interessant auch; waren vorher alle Predikatioren signifikant, sind es zwei nun nicht mehr. Was macht man mit diesen? Ist dies Kolinearität? Zeigt, dass es problematisch sein kann, AIC-Wert absolut zu betrachten. Sollte relativ zu einem anderen AIC-Wert betrachtet werden (grösser oder kleiner)
 
-## Visualtisation:
+## Visualisation:
 
 ```{r}
-plot(x = mod_fin$fitted.values , y = vars[as.numeric(rownames(mod_fin$model)),1], xlim = c(-5,15), ylim = c(-5,15), main = "Final Model", sub = paste(paste("R^2 =", round(summary(mod_fin)$r.squared, digits = 3)), paste("RMSE =", round(sqrt(mean(summary(mod_fin)$residuals^2)), digits = 3)), collapse = ", "), xlab = "Ŷ", ylab = "Y")
+plot(x = mod_fin$fitted.values , y = vars[as.numeric(rownames(mod_fin$model)),1], xlim = c(-5,15), ylim = c(-5,15), main = "Final Model", sub = paste(paste("R^2 =", round(summary(mod_fin)$r.squared, digits = 3)), paste("RMSE =", round(sqrt(mean(summary(mod_fin)$residuals^2)), digits = 3)), collapse = ", "), xlab = "Ŷ", ylab = "Y", col = rgb(0,0,0, alpha = 0.1), pch = 16)
 abline(a= 0, b=1, col = "darkgreen")
 
 ```
