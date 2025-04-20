@@ -9,6 +9,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Preparation:
+
 ```{r}
 library(ggplot2)
 library(readr)
@@ -16,9 +18,8 @@ library(lubridate)
 library(dplyr)
 library(patchwork)
 ```
+## Downloading the Data:
 
-
-# Downloading the Data:
 ```{r}
 url <- "https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv"
 
@@ -30,7 +31,7 @@ flux_data <- read.table(
 
 ```
 
-# Model Variable selection:
+## Model Variable selection:
 ```{r}
 View(flux_data)
 
@@ -50,6 +51,8 @@ Besides that I'm also not considering siteid (obviously) and TIMESTEP (as we hav
 This selection yields a sample of n= 15442 observations (which are ~67% of the initial sample), when including all 14 variables.
 
 # Exercise 1: 
+## Univariate Models: 
+
 ```{r}
 plot_vec <- list()
 metrics <- c()
@@ -85,13 +88,13 @@ for (i in 2:length(vars)) {
 
 ```
 
-Visualisation:
+## Visualisation:
 
 ```{R}
 wrap_plots(plot_vec, ncol = 4)
 ```
 
-Analysis: 
+## Interpretation:
 For analysing my results I refer to the following equation: 
 GPP = PPFD * fAPAR * LUE, 
 where PPFD measures the solar radiation (photon) flux, fAPAR denotes the fraction of absorbed potosynthetically active radiation and LUE stands for the Light use efficency describing the efficency with which absorbed photons are used to convert atmospheric C02 into C in the form of sugars. 
@@ -148,8 +151,10 @@ mod_fin<- lm(paste(mod_pred[1], " ~ ", paste(mod_pred[-1], collapse = " + ")), d
 summary(mod_fin)
 
 ```
-
+##### XXXXXXXXXXXXX
 Höherer AIC-Wert nach Aufrufen von na.omit() direkt in Regressionsformel kommt zustande, da n gestiegen ist. Werden nun zwei zusätzliche Prädikatoren berücksichtigt. Adjusted R^2 steigt leicht. Interessant auch; waren vorher alle Predikatioren signifikant, sind es zwei nun nicht mehr. Was macht man mit diesen? Ist dies Kolinearität? Zeigt, dass es problematisch sein kann, AIC-Wert absolut zu betrachten. Sollte relativ zu einem anderen AIC-Wert betrachtet werden (grösser oder kleiner)
+
+## Visualtisation:
 
 ```{r}
 plot(x = mod_fin$fitted.values , y = vars[as.numeric(rownames(mod_fin$model)),1], xlim = c(-5,15), ylim = c(-5,15), main = "Final Model", sub = paste(paste("R^2 =", round(summary(mod_fin)$r.squared, digits = 3)), paste("RMSE =", round(sqrt(mean(summary(mod_fin)$residuals^2)), digits = 3)), collapse = ", "), xlab = "Ŷ", ylab = "Y")
@@ -157,10 +162,7 @@ abline(a= 0, b=1, col = "darkgreen")
 
 ```
 
-Visualisation: 
-- Just last model or each one separately plotted?
-
-Analysis: 
+## Interpretation: 
 Ich habe als Resultat folgendes Modell erhalten: 
 
 ```{r}
