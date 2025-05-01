@@ -1,5 +1,5 @@
 ---
-title: "report_4"
+title: "Report Exercise Chapter 9"
 author: "Timo Trinidad"
 date: "2025-04-18"
 output: html_document
