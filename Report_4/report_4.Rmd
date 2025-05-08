@@ -114,7 +114,7 @@ for (i in 2:length(vars)) {
 ## Visualisation:
 
 ```{R}
-wrap_plots(plot_vec[2], ncol = 4)
+wrap_plots(plot_vec, ncol = 4)
 ```
 
 ## Interpretation:
@@ -195,3 +195,9 @@ paste(mod_pred[1], " ~ ", paste(mod_pred[-1], collapse = " + "))
 ```
 Meine Analyse orientiert sich im folgenden wiederum an der in Aufgabe 1 angeführten Gleichung.
 Auf PPFD, das in der univariaten Regression den höchten R^2-Wert erzielte, wurde die langwellige Einstrahlung in die bivariate Regression aufgenommen. Dies ist nun interessant, da die univariate Regression mit der langwelligen Einstrahlung bloss einen tiefen R^2-Value von 0.17 aufwies. Dies könnte umgekehrt beudeuten, dass Variablen, die in der univariaten Regression höhere R^2 Werte lieferten - shortwave radiation, Lufttemperatur - stark mit PPFD korrelieren, so dass sie nur wenig "neue Varianz" in das Modell bringen. (In Hinblick auf den Einfluss der Temperatur würde dies meinen alternativen Erklärungsansatz von oben stützten, dass diese mit GPP korreliert, weil sie auch mit der solaren Einstrahlung korreliert.) Als dritte erklärende Variable wird das vapor pressure deficit aufgenommen, erst danach die Lufttemperatur und die kurzwellige Einstrahlung.
+
+
+-> What about non significant params? Why are they included but not being significant now? Problem of cut influence?
+-> What if excluding TA_F??
+
+-> Having identical predictors (TA_F_MDS, TA_F) included in the model is a good test -> They are very equal. So when having included one of them, the other should add (alomost) no additional variance, therefore not enhancing the R^2, so not/only at the very end, beeing included. 
