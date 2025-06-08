@@ -1,0 +1,241 @@
+---
+title: "Report Exercise Airquality"
+author: "Timo Trinidad"
+date: "2025-03-12"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message= FALSE}
+library(ggplot2)
+library(readr)
+library(lubridate)
+library(dplyr)
+library(weathermetrics) # A nice package to conveniently transform units of different meteorological variables (found through ChatGPT)
+library(tidyr)
+library(here)
+library(patchwork)
+library(corrplot)
+library(performance) # A nice package to test, if the conditions for a regression model are met for the given sample (found through a LinkedIn post)
+library(zoo)
+```
+
+### Introduction
+
+#### Research Question
+In this report exercise, I want to find out how air quality, expressed by the ozone concentration at ground level, depends on meteorological conditions such as temperature, solar radiation and wind speed. The analysis refers to an urban context (New York) for which I expect high – unobserved – anthropogenic NO emissions, which also influence the ozone concentration.
+#### Structure of my Analysis 
+In my analysis, I proceed in three steps: In the first step, I want to gain an overview of the distribution of the sample. Then I undertake a visual and numerical correlation analysis to reveal covariations between the variables. Finally, based on the correlations identified, I propose a dependency model (multivariate linear regression) in a third step, which includes ozone concentration as the dependent variable and temperature, wind speed and solar radiation as independent variables.
+
+#### Description of the Dataset
+
+```{r}
+?datasets::airquality
+```
+
+The following variables are included in the data set:
+- Ozone, mean value [ppb], measured between 13:00 and 17:00.
+- Solar radiation [lang = 41,840 J/m2], in the wavelength range from
+4000-7700 Angstroms, measured between 08:00 and 12:00.
+- Wind speed [miles/h], mean value, measured between 07:00 and 10:00.
+- Month (scalar between 1-12) 
+- Day (scalar between 1-31)
+
+Observation period: May-September 1973, daily measurements
+Measurement location: New York, USA.
+Distance from the ozone measuring station:
+- Temperature (La Guardia Airport): ~6.9 km
+- Wind (La Guardia Airport): ~6.9 km
+- Solar radiation (Central Park): ~2.8 km
+
+```{r}
+knitr::include_graphics(here("re_airquality/resources/StationLocations.png"))
+# Background Map Credits: Vexcel Imaging via Google Earth, Screenshooted on 05.06.2025.
+```
+
+### Analysis of the sample
+
+#### Data Preparation
+
+```{r}
+?datasets::airquality
+airquality <- tibble(datasets::airquality)
+
+# Create a date column: 
+airquality$Date <- make_date( year= 2025, month= airquality$Month, day= airquality$Day)
+airquality <- dplyr::select(airquality, !all_of(c("Day", "Month")))
+
+# Proper column names:
+colnames(airquality) <- c("Ozone", "Solar.Radiation", "Wind", "Temperature", "Date")
+
+# Transform Temperature unit from Fahrenheit to degrees Celsius: (I'm used to think of temperature levels in deg. Celsius, so this will make the interpretation easier)
+airquality$Temperature <- convert_temperature(airquality$Temperature, old_metric = "f", new_metric = "c")
+
+```
+
+#### Summary-Statistics and Grouped Boxplots
+
+```{r, warning= FALSE}
+summary(airquality)[,-5]
+
+units <- c("ppm", "lang", "mph", "°C")
+box_list <- vector("list", length= 4)
+vars <- colnames(airquality)[1:4]
+
+for (i in 1:4) {
+  col <-colnames(airquality)[1:4][i]
+  box_list[[i]] <- ggplot(data= airquality, aes(x= factor(format(Date, "%B"), levels= c("Mai", "Juni", "Juli", "August", "September"), labels = c("May", "June", "July", "August", "September")), y= .data[[col]])) +
+    geom_boxplot() +
+  labs(title= paste("Dispersion in",colnames(airquality)[i],"Values", sep= " "), y= paste(colnames(airquality)[i], "in", units[i], sep= " "), x= "Month")
+}
+
+wrap_plots(box_list, ncol = 2)
+
+```
+
+Ozone levels seem to follow a seasonal pattern, with higher levels in the summer months of July and August and lower levels in spring (May) and early summer (June). The levels also drop again towards autumn (September). In addition to seasonal shifts in the median, the strength of the dispersion also appears to fluctuate seasonally. The interquartile range in July and August is 2-3 times wider than in the other months. Finally, there are several outliers. In May and August, these are well above the end of the upper whisker.
+
+With regard to solar radiation, the median remains stable over the months, with only a slight increase in July. There are large ranges across all months, with the interquartile range being particularly large in May and June. In July, there is an outlier with a measured value close to 0, possibly a measurement error.
+
+Wind speed again shows little variation in the median, although a seasonal pattern appears to be emerging (with lower values in July and August and higher wind speeds in May and September). The interquartile ranges are relatively homogeneous across the months. There are two strong outliers, high and low, in June.
+
+As expected, the median temperature values show a clear seasonal pattern with increasing values from May to June and falling values again between August and September. June is characterised by particularly low spread (low interquartile range, short whiskers), but at the same time shows negative outliers. The remaining months show relatively homogeneous spread. 
+
+Before excluding outliers, there are 37 NA values (24%) for ozone and 7 (4.6%) for solar radiation. The measurement series for temperature and wind are complete. 
+
+
+### Correlation analysis
+In this part of the analysis, I want to find out how the variables vary together over time. I will do this in two steps: first, I want to gain a visual impression by plotting the standardised values in different ways, and then a numerical impression by calculating the correlations.  
+
+In order to guarantee unbiased statistics in the following, I exclude the extreme values identified above. Finally, I fill in the Na gaps by using the mean value of the two nearest preceding and following observations. 
+
+```{r}
+
+# Ausschluss von Extremwerten: 
+for (i in 1:(dim(airquality)[2]-1)) {
+  outliers <- boxplot.stats(airquality[[i]])$out
+  airquality[airquality[[i]] %in% outliers, i] <- NA
+}
+
+# Erseten von Na-Werten: Ich brauche  zoo::na.approx(), was die Werte genau auf die Weise ersetzt, wie ich es oben beschrieben habe.
+
+airquality$Ozone <-   zoo::na.approx(airquality$Ozone)
+airquality$Solar.Radiation <- zoo::na.approx(airquality$Solar.Radiation)
+
+# I store the data table, based on which the following analysis will be carried out under "/data/airquality_ready.csv" (ready for analysis)
+write.csv(airquality, here::here("re_airquality/data/airquality_ready.csv"), row.names =  FALSE)
+```
+
+
+#### Lineplots
+
+```{r}
+
+# I'm creating another table, which stores the standardized values. This makes it easier to interpret the plots in terms of similar variation.
+airquality_stand <- airquality
+
+airquality_stand$Ozone <- (airquality$Ozone - mean(airquality$Ozone, na.rm = TRUE))/sd(airquality$Ozone, na.rm = TRUE)
+
+airquality_stand$Temperature <- (airquality$Temperature - mean(airquality$Temperature, na.rm = TRUE))/sd(airquality$Temperature, na.rm= TRUE)
+
+airquality_stand$Solar.Radiation  <- (airquality$Solar.Radiation  - mean(airquality$Solar.Radiation , na.rm = TRUE))/sd(airquality$Solar.Radiation , na.rm= TRUE)
+
+airquality_stand$Wind <- (airquality$Wind - mean(airquality$Wind, na.rm = TRUE))/sd(airquality$Wind, na.rm = TRUE)
+
+# Check if transformation went smooth: All variables should now have zero mean.
+summary(airquality_stand)
+
+
+# Lineplots: 
+
+for (i in 2:(ncol((airquality_stand)) - 1)) {
+  airquality_stand_selection <- dplyr::select(airquality_stand, all_of(c("Date", "Ozone", names(airquality_stand)[i])))
+  airquality_stand_selection_long <- pivot_longer(airquality_stand_selection, cols= -Date, names_to = "variable", values_to= "values") # To make plotting easier, I create a version of my table in long format:
+  p <- ggplot(data= airquality_stand_selection_long, aes(x= Date, y= values, color= variable)) +
+    geom_line() +
+    labs(title = "Comparison of the Variation over Time", y= "Standardised Variation", x= "Month")
+  print(p)
+}
+
+```
+
+For the standardised time series of ozone and solar radiation, I cannot detect any clear synchronism. Although it appears that a positive deviation in solar radiation is accompanied by a positive deviation in ozone, the relative strength of the deviations seems to vary greatly. This could indicate that there is a positive covariance, but that it is rather weak, or that ozone is also significantly influenced by other variables. 
+
+The standardised time series for ozone and wind appear to run in opposite directions: if the values for wind are positive (absolute values above the mean), the ozone values tend to be negative. This suggests a negative covariation. The period from mid- to late June deviates from the observed asynchrony. Here we observe the lowest wind value. At the same time, the ozone value for this day appears to be imputed (recognisable by the linear connection between the preceding and following values), which is why I do not consider the deviation from the observed pattern to be particularly significant.
+
+A positive covariation is indicated for the comparison of the variation in temperature and ozone. In periods with positive standardised temperature values, the ozone values are also positive and vice versa. Across all three comparisons, these appear to be the curves that run most synchronously with each other. In May, we observe the lowest temperature values. Here, the ozone values do not seem to follow quite as closely, which indicates a certain downward stability. 
+
+#### Scatterplots
+
+```{r, warning= FALSE, message= FALSE}
+
+scat_list <- vector("list", length= 3)
+
+for (i in 2:4) {
+  col <- colnames(airquality_stand)[i]
+  scat_list[[i-1]] <- ggplot(data= airquality_stand , aes(x = Ozone, y = .data[[col]])) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, na.rm= TRUE)
+}
+
+wrap_plots(scat_list, ncol = 2)
+
+```
+
+The scatter plots with regression lines seem to support my assumptions above: ozone appears to increase with rising temperatures and solar radiation and decrease with increasing wind speed. The width of the confidence bands also suggests that the correlation appears to be stronger for temperature and wind speed than for solar radiation.
+
+#### Correlation Matrix
+
+```{r}
+
+cor(dplyr::select(airquality, -Date), use= "na.or.complete")
+
+```
+
+Finally, the numerical calculations also supported my visual impression: the (Pearson) correlations between ozone and solar radiation or temperature are positive, while those with wind are negative. The strength of the correlations also confirms what I had already observed in the graphs. 
+
+
+### Dependency analysis:
+In this concluding part of my analysis, I want to translate the correlations identified above into dependency relationships. The correlations identified so far were undirected. My assumption is that temperature, wind and solar radiation affect ozone (more strongly than vice versa). A look at the literature (e.g. Wang et al. 2023) supports this assumption. In the following, I formulate a linear regression model in which wind, temperature and solar radiation as independent variables explain the dependent variable ozone.
+
+#### Linear regression model
+
+```{r}
+
+mod <- lm(Ozone ~ Temperature + Solar.Radiation + Wind, data= airquality, na.action = na.exclude)
+summary(mod)
+
+```
+
+Interpretation: A 1°C increase in temperature is associated with a 2.85 ppb increase in ozone concentration. A 1 mph increase in wind speed is associated with a 2.22 ppb decrease in ozone concentration. An increase in solar radiation of 1 lang is associated with an increase in ozone concentration of 0.04 ppm (significant at the 5% significance level).
+
+The model explains ~52% of the variation in ozone values.
+
+#### Limitations of the model: 
+In order for a regression model to meet the quality criteria of unbiasedness, efficiency and consistency, a number of conditions must be met. While some criteria mainly have consequences for the sharpness of the test statistics (t- and F-statistics in the upper output) and the efficiency of the estimation (sample-related dispersion of the estimators around the true value) (e.g. condition of homoscedasticity, no autocorrelation, normal distribution of residuals), I will limit myself in the following mainly to the two conditions that influence whether the parameter estimators of our model are unbiased, i.e. whether the expected values of the estimators correspond to the true values in the population (i.e. no systematic overestimation or underestimation):
+- No omitted variable bias: The independent variables are uncorrelated with the residuals.
+- No collinearity: None of the independent variables is a linear combination of the others. The independent variables are not perfectly correlated with each other.
+
+I test the collinearity condition with the {performance} package:
+
+```{r}
+
+performance::check_collinearity(mod)
+
+```
+
+The variance inflation factor (VIF) describes the strength of the correlation between a specific independent variable and all other variables. Derived directly from this is the measure of tolerance, which describes the absence of collinearity. In the absence of multicollinearity, it has a value of 1; in the case of perfect multicollinearity, it has a value of 0. The high tolerance values (all > 0.75) indicate that we are only dealing with weak collinearity, so the model appears to be valid with regard to this condition. 
+
+The condition of no omitted variable bias cannot be tested directly. After reviewing the literature on the subject, which cites other determinants of ozone concentration that also covary, at least in part, with the independent variables considered, I assume that this condition is not met. The consequence of this is that we cannot interpret the model coefficients causally, as they also include the effects of the unobserved, covariating variables. Nevertheless, our model remains valid as a forecasting model.
+
+Another limitation that is not directly related to the estimation model lies in the data collection. As already discussed in the introduction, the data comes from a total of three different measuring stations, each several kilometres apart. Especially in urban areas, sealing, planting, open water areas and rows of houses can cause significant differences in temperature and wind strength even on a very small scale. Furthermore, the data was recorded at different times of the day. It is not entirely clear what motivates these time lags and whether they are even related to the spatial distance of the stations. 
+
+
+### Conclusion: 
+With this analysis, I wanted to find out how ozone concentration in an urban area depends on temperature, solar radiation and wind speed. To do this, I first looked at the temporal variation in ozone values, which showed a seasonal pattern with higher concentrations in the summer months. I then compared the ozone values with the values of the other variables. This revealed stronger covariations, particularly for temperature and wind speed. Finally, I estimated the ozone values using the other variables in a linear regression model. This showed that ozone concentration increases at a similar factor to temperature as it decreases with wind speed. For a more comprehensive analysis, the model would need to be further improved (increase in model performance) and validated more comprehensively (also with regard to further OLS conditions).

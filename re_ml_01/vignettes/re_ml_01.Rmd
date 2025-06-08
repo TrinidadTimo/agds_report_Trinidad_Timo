@@ -1,0 +1,322 @@
+---
+title: "Report Exercise Machine Learning 1"
+author: "Timo Trinidad"
+date: "2025-04-18"
+output:
+html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message= FALSE}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+library(caret)
+library(recipes)
+library(patchwork)
+library(here)
+```
+
+
+# Exercise 1: Comparison of the linear regression and KNN models
+
+1)
+### Loading the data, selecting variables, cleaning bad quality observations: 
+
+```{r}
+daily_fluxes <- read_csv(here("re_ml_01/data/FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv")) |>  
+  # select only the variables we are interested in
+  dplyr::select(TIMESTAMP,
+                GPP_NT_VUT_REF,    # the target
+                ends_with("_QC"),  # quality control info
+                ends_with("_F"),   # includes all all meteorological covariates
+                -contains("JSB")   # weird useless variable
+                ) |>
+
+  # convert to a nice date object
+  dplyr::mutate(TIMESTAMP = lubridate::ymd(TIMESTAMP)) |>
+
+  # set all -9999 to NA
+  mutate(across(where(is.numeric), ~na_if(., -9999))) |> 
+  
+  # retain only data based on >=80% good-quality measurements
+  # overwrite bad data with NA (not dropping rows)
+  dplyr::mutate(GPP_NT_VUT_REF = ifelse(NEE_VUT_REF_QC < 0.8, NA, GPP_NT_VUT_REF),
+                TA_F           = ifelse(TA_F_QC        < 0.8, NA, TA_F),
+                SW_IN_F        = ifelse(SW_IN_F_QC     < 0.8, NA, SW_IN_F),
+                LW_IN_F        = ifelse(LW_IN_F_QC     < 0.8, NA, LW_IN_F),
+                VPD_F          = ifelse(VPD_F_QC       < 0.8, NA, VPD_F),
+                PA_F           = ifelse(PA_F_QC        < 0.8, NA, PA_F),
+                P_F            = ifelse(P_F_QC         < 0.8, NA, P_F),
+                WS_F           = ifelse(WS_F_QC        < 0.8, NA, WS_F)) |> 
+
+  # drop QC variables (no longer needed)
+  dplyr::select(-ends_with("_QC"))
+
+# I'm storing this cleaned and reduced  table under "/data/*_clean" 
+write.csv(daily_fluxes,here("re_ml_01/data/FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3_clean.csv")) 
+
+```
+
+### Pre-Processing
+#### Analysing missing data: 
+
+```{r}
+visdat::vis_miss(
+  daily_fluxes,
+  cluster = FALSE, 
+  warn_large_data = FALSE
+  )
+```
+
+LW_IN_F (the longwave radiation) is affected by a lot of missing data. As the longwave radiation is no crucial variable affecting GPP I decide to drop it (see model formulation in recipe).
+
+#### Imputatation
+I decide to just drop rows with missing data instead of filling Na-observations through imputation to retain the rows (see recipe).
+
+#### Testing for Zero-Variance-Predictors: 
+
+```{r}
+caret::nearZeroVar(daily_fluxes, saveMetrics = TRUE)
+```
+
+No predictors with near-zero variance. Also I have no categorical variables in our model, thus no transformation by one-hot encoding needed for applying KNN.
+
+#### Analysing the distribution of the target variable: 
+
+```{r}
+daily_fluxes |> 
+  ggplot(aes(x = GPP_NT_VUT_REF)) + 
+  geom_histogram()
+  
+```
+
+In the distribution of our target variable no long tails can be observed. Therefore no further target engineering is carried out.
+
+#### Analysing the distribution of the predictors: 
+For implementing KNN, the predictors have to be standardized (mean of 0 and standard deviation of 1). This is directly implemented in the recipe definition (calculated based only on the training data!).
+
+Also, some of the predictors are not normally distributed. I decide to Box-Cox transform all predictors. This is also directly implemented in the recipe formulation. [Open Question - Is normal distribution a condition for KNN? For regression, just the residuals have to be normally distributed for testing, right? Why are we doing this step?]
+
+### Data Splitting
+```{r}
+set.seed(1982)  # for reproducibility
+split <- rsample::initial_split(daily_fluxes, prop = 0.7, strata = "VPD_F")
+daily_fluxes_train <- rsample::training(split)
+daily_fluxes_test <- rsample::testing(split)
+
+```
+
+### Recipe Formulation (model and pre-processing)
+
+```{r}
+pp <- recipes::recipe(GPP_NT_VUT_REF ~ SW_IN_F + VPD_F + TA_F, 
+                      data = daily_fluxes_train |> drop_na()) |> 
+  recipes::step_BoxCox(recipes::all_predictors()) |> 
+  recipes::step_center(recipes::all_numeric(), -recipes::all_outcomes()) |>
+  recipes::step_scale(recipes::all_numeric(), -recipes::all_outcomes())
+
+```
+
+### Model Fitting
+#### Linear Regression Model: 
+```{r}
+mod_lm <- caret::train(
+  pp, 
+  data = daily_fluxes_train |> drop_na(), 
+  method = "lm",
+  trControl = caret::trainControl(method = "none"),
+  metric = "RMSE"
+)
+
+```
+Open Question: How to handle this issue? For temperature I can't just drop neg values, right?
+
+#### KNN Model: 
+```{r}
+mod_knn <- caret::train(
+  pp, 
+  data = daily_fluxes_train |> drop_na(), 
+  method = "knn",
+  trControl = caret::trainControl(method = "none"),
+  tuneGrid = data.frame(k = 8),
+  metric = "RMSE"
+)
+
+```
+
+### Model Evaluation
+
+```{r}
+
+source(here("re_ml_01/functions/eval_model.R"))
+
+# Linear Regression Model:
+eval_model(mod = mod_lm, df_train = daily_fluxes_train, df_test = daily_fluxes_test)
+```
+
+```{r}
+# KNN Model: 
+eval_model(mod = mod_knn, df_train = daily_fluxes_train, df_test = daily_fluxes_test)
+```
+
+2) Interpreting differences for the bias-variance trade-off:
+- Why is the difference between the evaluation on the training and the test set larger for the KNN model than for the linear regression model?
+A difference in the evaluation metrics (here I consider R^2 and RMSE), especially better scores for the training set - as it is here and normally the case - indicates that the model is overfitted to the training data. This means, the model not only adjusts to the true underlying relationship between the dependent and independent variable but also to observation errors/noise specific for the considered training data. In consequence, the model fits worse to the test data, whichs variation - besides the shared true underlying relationship - is made up of it's "own" noise. 
+
+Turning to the model comparison, this means that for the same variables the KNN approach (with k = 8) seems to be more prone to overfitting than the linear regression. Why is this the case? 
+  - So, first, this might just result from the difference in the underlying conceptual approach of the models: KNN is a local model doing it's predictions based on local neighbourhood. The regression model on the other hand gets it's predictions based on a global relationship between the variables (minimizing the total **sum** of the squared residuals, not considering a single observation that much...).
+  - I am considering here just a regression model of order one (so linear). This means actually, I am just putting a straight line on our data. This is per se very inflexible. KNN doesn't have this linear constraint. 
+  - Finally, I set k = 8 for our knn model. This seems quite low compared to our sample size of 1923 observations: For each estimation the model is just considering 0.4% of the whole sample. When also taking into account, that I use the mean afterwards which is prone to a high variance in the case of outliers, the knn model has an even greater disposition for overfitting. 
+  
+- Why does the evaluation on the test set indicate a better model performance of the KNN model than the linear regression model?
+(I might have already answered this above, but for the sake of completeness I give it here another shot):
+  - On the one hand, I am considering an unflexible regression model of order one, on the other hand I am considering a KNN model with k=8, what means that each prediction is based on the closest 0.4% of the whole data, what makes it very flexible. 
+
+- How would you position the KNN and the linear regression model along the spectrum of the bias-variance trade-off?
+  - Linear Regression: "Higher Bias, Lower Variance/Overfitting"
+  - KNN: "Lower Bias, Higher Variance/Overfitting"
+  
+3) Visualizing temporal variations of observed and modeled GPP
+
+Regression Model: 
+
+```{r}
+plot_data <- daily_fluxes |> filter(SW_IN_F > 0, VPD_F > 0, TA_F > 0) |>
+  drop_na(SW_IN_F, VPD_F, TA_F) # Because I undertook Box_Cox-Transformation on our predictors in the first place, which is not applicable on negative values. 
+
+pred_lm <- predict(
+  mod_lm,
+  newdata = plot_data
+)
+
+plot_data <- plot_data |> mutate(gpp_pred_lm = pred_lm)
+
+ggplot(data= plot_data, aes(x= TIMESTAMP, y= GPP_NT_VUT_REF)) +
+  geom_point(alpha = 0.3) +
+  geom_point(aes(x= TIMESTAMP, y = gpp_pred_lm), color = "blue", alpha = 0.3)
+
+
+```
+
+KNN-Model: 
+
+```{r}
+pred_knn <- predict(
+  mod_knn,
+  newdata = plot_data
+)
+
+plot_data <- plot_data |> mutate(gpp_pred_knn = pred_knn)
+
+ggplot(data= plot_data, aes(x= TIMESTAMP, y= GPP_NT_VUT_REF)) +
+  geom_point(alpha = 0.3) +
+  geom_point(aes(x= TIMESTAMP, y = gpp_pred_knn), color = "blue", alpha = 0.3)
+
+```
+
+
+# Exercise 2: The role of k
+
+1) 
+  - For k approaching 1, the R^2 for the estimate of the training data will go towards 1, the Mae towards 0. Vice versa, for the estimates of the test data, the R^2 will be low, the Mae high (as the model is extremely sensitive to the training sample (small bias there, high variance, high overfitting).
+  - For k approaching n, the R^2 for the estimate of the training data will get smaller, the MAE will increase (the estimate for all individual Y is now based just on the average over all X values). For the estimates of the test data, the R^2 will increase in the beginning (MAE falls), but will finally - with k getting bigger and bigger - fall again (MAE increases) -> in the end high bias (very general estimate just based on the mean of all X, no "local" information" included), underfitting.
+  
+2)
+
+Splitting data:
+
+```{r}
+set.seed(1234) # Taking another value as above
+split <- rsample::initial_split(daily_fluxes, prop = 0.7, strata = "VPD_F") # Why do I want to maintain the distribution of the water-pressure deficite? 
+daily_fluxes_train_ex_2 <- rsample::training(split)
+daily_fluxes_test_ex_2 <- rsample::testing(split)
+
+```
+
+
+Model fitting and evaluation: 
+
+
+  - Recipe definition: (following the recipe from above/the tutorial)
+
+```{r}
+pp_ex_2 <- recipes::recipe(GPP_NT_VUT_REF ~ SW_IN_F + VPD_F + TA_F, 
+                      data = daily_fluxes_train |> drop_na()) |> 
+  recipes::step_BoxCox(recipes::all_predictors()) |> 
+  recipes::step_center(recipes::all_numeric(), -recipes::all_outcomes()) |>
+  recipes::step_scale(recipes::all_numeric(), -recipes::all_outcomes())
+
+```
+
+
+  - Model fitting iterating over different ks:
+  Here I'm working with a second function, which is an extract of the eval_model function but I) which starts a step earlier, so also including the model fitting based on an argument k and II) where the code for the plots is cut and instead the evaluation metrics are returned in a vector. (so the function is returning a bit more than what is asked for in the exercise description)
+  The idea is then to iterate with k going from 1 to N over this function while storing for each iteration the metrics specific for a certain value of k in a table. Finally I'm plotting the evolution of the metrics for both, the training and test data, over all ks.
+  Note about the "error() exit": In previous trials I run into an error with the message stating "too many ties in knn". Following Chat-GPP, this error comes from a situation, in which more data points have the same or a smaller distance to our target than the given k (the number of observation I want to select). Therefore the algorithm does not know, which observations to choose. As this problem should (by the fact that I am using several predictors and regarding the given variability in them) just arise, when k reached an already relatively big value, I decide to terminate the iterations at some point. I think, until then I got enough different k values to illustrate the dynamics in the model metrics it causes.
+  
+```{r}
+
+eval_table <- data_frame("k" = integer(), "rsq_train" = numeric(), "rmse_train" = numeric(), "rsq_test" = numeric(), "rmse_test" = numeric())
+
+source(here("re_ml_01/functions/eval_model_ex_2.R"))
+
+exit_loop <- FALSE
+
+for (i in 1:nrow(na.omit(daily_fluxes_train_ex_2))) {
+  result <- tryCatch({
+    eval_model_ex_2(i, daily_fluxes_train_ex_2, daily_fluxes_test_ex_2)
+  }, error = function(e) {
+    message(paste("Error at k =", i, ":", e$message))
+    exit_loop <<- TRUE
+    return(NULL)
+  })
+
+  if (exit_loop) break
+
+  if (!is.null(result)) {
+    eval_table <- rbind(eval_table, result)
+  }
+}
+
+colnames(eval_table) <- c("k", "rsq_train", "rmse_train", "rsq_test", "rmse_test") # For a certain reason (I don't understand) the table lost the predefined colnames through binding new rows. Therefore I'm redefining the names here a second time.
+
+plot_rsq <- ggplot(data= eval_table, aes(x = k)) + 
+  geom_line(aes(y = rsq_train)) +
+  geom_line(aes(y = rsq_test), color = "red") +
+  labs(y = expression(paste("R"^2))) # based on code seen in chapter 5
+  
+plot_rmse <- ggplot(data= eval_table, aes(x = k)) + 
+  geom_line(aes(y = rmse_train, color = "Train")) +
+  geom_line(aes(y = rmse_test, color= "Test")) +
+  labs(y= "RMSE") +
+  scale_color_manual(values = c("Train" = "black", "Test" = "red"), name = NULL)
+
+wrap_plots(plot_rsq, plot_rmse, ncol= 2)
+
+```
+
+  - Describe how a "region" of over- and underfitting can be determined in your visualisation
+  Following the red line for the test data, I see a situation of underfitting for the very left bit of the graphs (first ~ 50 values of k). This "region" is characterized by a (first) sharp and monotonous increase (decrease) in R^2 (RMSE) for the fit on the test data. With increasing k value the metrics reach a turning point passing over to the "region" of underfitting. This region is characterized by a monotonous linear decrease (increase) again for the value of R^2 (RMSE).
+
+
+
+3. Finding the optimal k:
+  The optimal k yields the best fit to the test data for a given model and data set. As I already extracted the metrics values for the first 499 values of k and as the visualisations above indicate that the best fit is given for a value of k between 1-50, I can get the optimal k value from my table.
+  
+```{r}
+k_rsq <- eval_table[eval_table$rsq_test == max(eval_table$rsq_test), 1]
+
+k_rsme <- eval_table[eval_table$rmse_test == min(eval_table$rmse_test), 1]
+
+max(eval_table$rsq_test)
+
+which(eval_table$rsq_test ==max(eval_table$rsq_test))
+```
+
+The optimal value for k is 32 yielding a R^2 value of 0.658.
