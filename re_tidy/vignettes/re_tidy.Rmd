@@ -1,0 +1,121 @@
+---
+title: "Report Exercise Tidy"
+author: "Timo Trinidad"
+date: "2025-03-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Importing required libraries: 
+```{r, message= FALSE}
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(readr)
+library(stringr)
+library(purrr)
+```
+
+### Preprocessing in Excel: 
+  - Eliminating string descriptions on the top (deleting first three rows).
+  - Harmonising variable names (merging names, which were split over several cells).
+  - Processed sheet 1 has been saved seperately as under "/data/soil_carbon_stocks.csv".
+  
+### Loading the data set and cleaning: 
+```{r}
+df_soil_carbon_stocks <- read_delim(here::here("re_tidy/data/soil_carbon_stocks.csv"), 
+    delim = "\t", trim_ws = TRUE)
+
+# clean for empty rows#
+for( i in 1:nrow(df_soil_carbon_stocks)) {
+  if (all(is.na(df_soil_carbon_stocks[i,1:ncol(df_soil_carbon_stocks)]))) {
+    df_soil_carbon_stocks <- df_soil_carbon_stocks[-i,]
+}
+
+}
+nrow(df_soil_carbon_stocks )
+
+#filling empty cells in "Experiment" column: 
+
+for (i in 1:(nrow(df_soil_carbon_stocks) - 1)) {
+  if (is.na(df_soil_carbon_stocks[i+1,1])) {
+    df_soil_carbon_stocks[i+1,1] <- df_soil_carbon_stocks[i,1]
+  } else {
+    next
+  }
+}
+
+# Making sure, numbers are stored as numeric objects: 
+sapply(df_soil_carbon_stocks, class) # looks okey.
+
+```
+
+
+### Aggregation by experiment: 
+
+#### Preparation: 
+```{r}
+# Creating variable for log-response ratio:
+df_soil_carbon_stocks$log_response_ration <-  log(df_soil_carbon_stocks$`g C m-2 mean increased CO2`/ df_soil_carbon_stocks$`g C m-2 mean ambient CO2`)
+
+# creating variable indicating phase: 
+df_soil_carbon_stocks$Phase <- df_soil_carbon_stocks$`Time (years)`
+df_soil_carbon_stocks <- df_soil_carbon_stocks |> 
+  mutate(Phase = case_when(
+    Phase < 3 ~ 1,
+    Phase >= 3 & Phase <= 6 ~ 2,
+    Phase > 6 ~ 3
+  ))
+
+# defining the Phase-variable as factor (and naming it's values):
+df_soil_carbon_stocks$Phase <- factor(df_soil_carbon_stocks$Phase, labels = c("early", "mid", "late"))
+
+# I'm storying the cleaned and extended (by phase and log-response-ratio variables) data frame table as "*_ready.csv ()" (ready for analysis):
+write.csv(df_soil_carbon_stocks, here::here("re_tidy/data/soil_carbon_stocks_ready.csv"), row.names =  FALSE)
+
+```
+
+#### Aggregation by phase across all experiments:
+```{r}
+df_log_response_ratio_aggregate <- df_soil_carbon_stocks |> 
+  group_by(Phase) |> 
+  summarise(log_response_ration = mean(log_response_ration))
+
+
+knitr::kable(df_log_response_ratio_aggregate)
+```
+
+### Interpretation: 
+
+#### What is the data about?
+Building on the idea of stimulated plant growth through increased atmospheric CO2 concentrations the paper wants to answer if with increased biomass production also the soil C sink increases, which would eventually add to reducing CO2 in the atmosphere again, building a crucial feedback within the earth system. To answer this question Van Groeningen et al. conduct a meta-analysis over 53 experiments, in which C-levels in soils exposed to increased CO2-levels were compared to soils under ambient levels. The dataset contains measurments from multiple experiments where ecosystems.
+
+#### What do I expect my analysis to show?
+I assume that under increased atmospheric CO2 concentrations C soil concentration increases until a new balance concentration is reached.
+Schematic visualisation of the process: I assume three phases: First we see a strong increase as more organic matter is getting into the soil (through roots and litter by increased plant growth as a consequence of increased photosynthesis). In a second phase, the increase slows down as microbes become more active, thus the turnover rate for organic matter increases. Finally, in a thrid phase, the turnover rate has fully adapted to the increased input level, thus, the curve saturates at a new (higher) equilibrium. 
+The long term absolute level difference depends on how fast microbial decomposition (and other processes (?) that increase turnover of SOC) catch up with the increased input flow.
+
+```{r}
+x <- seq(0, 100, length.out = 200)
+y <- log(x)
+
+plot(x, y, type = "l", lwd = 2, col = "darkgreen", 
+     xlab = "Time", ylab = "Soil Organic Carbon", 
+     main = "Change in SOC under increased ambient CO2")
+
+text(15, 2.5, "Phase 1", col = "red")
+text(50, 3.5, "Phase 2", col = "black")
+text(85, 4.2, "Phase 3", col = "blue")
+
+```
+
+#### What do I expect in terms of the values of the log-response ratio?
+A positive (negative) log-response ratio indicates a higher (lower) mean soil C level for a given phase under increased CO2 conditions than under ambient conditions. Following my conceptualization from above, I expect positive log-response ratios, with increasing values over the phases. Also I expect, that the difference between the the values of the first and second phase is bigger than of the second and third phase. 
+
+#### How do I interpret my results?
+The log-response ratio was slightly positive in the early (0.0125) and mid (0.0172) phases, indicating slightly higher mean levels compared to ambient conditions. However, in the late phase, the ratio turned negative (–0.0306), suggesting a decrease in soil carbon compared to ambient CO2 levels.
+
+The observed decline in the log-response ratio during the late phase deviates from my expectation of a continuous increase. This deviation could go back to biogeochemical feedback processes, I didn't consider before: Increased CO2 can accelerate microbial activity, increasing decomposition rates even stronger than the increased input rate (thus, also existing organic matter gets decomposed -> "priming effect"). The result is a net reduction in the soil carbon level. Also, a saturation of the soil's carbon storage capacity might occur over time, limiting any further accumulation.
