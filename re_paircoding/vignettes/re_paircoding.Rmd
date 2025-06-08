@@ -1,0 +1,9 @@
+---
+title: "Report Exercise Paircoding"
+author: "Timo Trinidad"
+date: "2025-04-18"
+output: html_document
+---
+
+- My initially created repo to get forked by Keerthi: https://github.com/TrinidadTimo/agds_re_paircoding.git
+- My repo created by forking Keerthi's initial repo: https://github.com/TrinidadTimo/agds_re_paircoding_Keerti_forked.git
