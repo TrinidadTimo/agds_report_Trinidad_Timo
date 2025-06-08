@@ -1,0 +1,199 @@
+---
+title: "Report Exercise Stepwise Regression"
+author: "Timo Trinidad"
+date: "2025-04-18"
+output: 
+  html_document:
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preparation:
+
+```{r, message= FALSE}
+library(ggplot2)
+library(readr)
+library(lubridate)
+library(dplyr)
+library(patchwork)
+library(here)
+```
+## Downloading the Data:
+
+```{r}
+url <- "https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/df_for_stepwise_regression.csv"
+
+flux_data <- read.table(
+  url,
+  header = TRUE,
+  sep = ","
+)
+
+```
+
+```{r}
+visdat::vis_miss(
+  flux_data,
+  cluster = FALSE, 
+  warn_large_data = FALSE
+  )
+
+```
+
+- In the course of a first look on the datatable I noticed that the gapfilled longwave radiation (LW_IN_F_MDS) seems to have quite some missing values. This is backed by the code in the following line, which shows it only contains 11954 non-missing values. As the following regression models demands equal numbers of observations over all included variables, including LW_IN_F_MDS would ineviteably imply losing almost half of all observations over all included variables. Based on this concern and drawing on the fact that the incoming longwave radiation is also covered by LW_IN_F, I decide to leave LW_IN_F_MDS out of the vector of the model variables. 
+Besides that I'm also not considering siteid (obviously) and TIMESTEP (as we have the most physical variables causally linked to GPP and varying over time included, I assume in the end the effect of a time variable will be very small/insignificant). 
+
+This selection yields a sample of n= 15442 observations (which are ~67% of the initial sample), when including all 14 variables.
+
+```{r}
+## Model Variable selection:
+head(flux_data)
+
+sum(!is.na(flux_data$LW_IN_F_MDS))
+dim(na.omit(flux_data[,-c(1,2,12)]))
+
+
+vars <- flux_data[,-c(1,2,12)]
+vars <- vars[,c(13,1:12,14)] #rearranging columns
+
+# I'm storing the cleaned data:
+write.csv(flux_data, here("re_stepwise/data/df_for_stepwise_regression_clean.csv"))
+```
+
+```{r}
+caret::nearZeroVar(vars, saveMetrics = TRUE)
+```
+
+Why am I am keeping for some variables both metrics (e.g.TA_F_MDS and TA_F)?
+Having almost identical predictors included in the model is a good test for the following "algorithm": As they are very equal, after having included one of them, the other should add (alomost) no additional variance, therefore not enhancing the R^2, so not/only at the very end, beeing included. 
+
+Checking the distribution of the target variable: 
+```{r}
+plot_1 <- ggplot(data = vars, aes(x = GPP_NT_VUT_REF, y = ..density..)) +
+  geom_histogram() +
+  labs(title = "Original")
+plot_1
+```
+# Exercise 1: 
+## Univariate Models: 
+
+```{r}
+plot_vec <- list()
+metrics <- c()
+
+for (i in 2:length(vars)) {
+  mod_1 <- lm(vars[,1] ~ vars[,i], na.action = na.omit)
+  mod_sum <- summary(mod_1)
+  
+  metrics["R^2"] <- mod_sum$r.squared
+  metrics["RMSE"] <- sqrt(mean(mod_sum$residuals^2))
+  metrics["Bias"] <- mean(mod_sum$residuals)
+  metrics["Slope"] <- mod_sum$coefficients[2,1]
+  
+  df_plot <- data.frame(
+    Y = vars[as.numeric(rownames(mod_1$model)),1],
+    Y_hat = mod_1$fitted.values
+  )
+  
+  plot_vec[[i-1]] <- ggplot(df_plot, aes(x = Y_hat, y = Y)) +
+    geom_point(alpha = 0.1) +
+    labs(
+      x = expression(hat(Y)),
+      y = "Y",
+      title = colnames(vars)[i],
+      subtitle = paste(paste(names(metrics), round(metrics, 3), sep = " = "), collapse = ", ")
+    ) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "darkgreen") +
+    geom_abline(intercept = mod_sum$coefficients[1,1], slope = mod_sum$coefficients[2,1], color = "red") + 
+    coord_cartesian(xlim = c(-5,15), ylim = c(-5,15)) +
+    theme_classic() +
+    theme(plot.subtitle = element_text(size = 7))
+}
+
+```
+
+## Visualisation:
+
+```{R}
+wrap_plots(plot_vec, ncol = 4)
+```
+
+## Interpretation:
+For analysing my results I refer to the following equation: 
+GPP = PPFD * fAPAR * LUE, 
+where PPFD measures the solar radiation (photon) flux, fAPAR denotes the fraction of absorbed potosynthetically active radiation and LUE stands for the Light use efficency describing the efficency with which absorbed photons are used to convert atmospheric C02 into C in the form of sugars. 
+
+Hypothesis: I expect the highest R^2 values for variables, which depict one of the components of the equation above - directly or as (highly correlated) proxis. For variables, which do not have a (strong) connection to one of the equation's componenents I expect small values for R^2.
+
+Results: As expected, the highest R^2 value of 0.452 is achieved by the incoming photosynthetic photon flux density (PPFD_IN), a variable that is directly represented in the equation explaining GPP. Next, the incoming shortwave radiation (SW_IN_F/SW_IN_F_MDS) explains 43% of the variance in GPP values. I explain its relatively high R^2 value by the fact that it is strongly correlated with PPFD. This can be verified by performing a bivariate regression with both explanatory variables. I expect that the coefficient of shortwave radiation will no longer be significant, as the omitted variable bias that existed in the univariate regression with regard to photon flux density will now disappear. 
+
+
+```{r}
+summary(lm(GPP_NT_VUT_REF ~ PPFD_IN + SW_IN_F ,data = vars, na.action = na.omit))
+```
+The results therefore support my assumption,
+with 0.39 being the third highest R^2 value achieved by air temperature (TA_F/TA_F_MDS). This could be due to the fact that LUE depends on temperature, among other things. The amount of CO2 assimilated by a plant is determined by the opening of the stomata. This is regulated, among other things, by water vapour emission, which increases at higher temperatures (this applies within a certain temperature range or when the plant is not under water stress) because the saturation vapour pressure of the atmospheric air rises at higher temperatures, thereby increasing the gradient between the water vapour pressure inside the leaf and the atmospheric vapour pressure. This explanation is contradicted by the fact that the regression with CO2 concentration, which should be related to photosynthetic activity in a similar way to temperature, has a significantly lower R^2 value. The low R^2 value of the vapour pressure deficit (VPD_F/VPD_F_MDS) could be another counterargument, but it could also be due to a non-linear relationship (saturation vapour pressure increases exponentially with temperature).
+Another explanation would be that temperature correlates primarily with solar radiation and thus contributes to its R^2 value. However, this is contradicted by the fact that in the bivariate regression with solar radiation, the estimated coefficient of temperature remains significant. 
+
+With regard to the other variables – precipitation (P_F), wind speed (WS_F), atmospheric pressure (PA_F), friction velocity (USTAR) – these have a value of R^2 < 0.1, thus hardly explaining the variance in the GPP data. Although these variables can be combined with the factors in the above equation, but the correlation is very low/indirect (e.g. precipitation is related to atmospheric moisture content, which in turn affects the water vapour pressure gradient between the leaf surface and the leaf interior, which is one of the factors that regulates stomatal opening, which affects LUE).
+
+Finally, all R^2 values are probably suppressed by the low variance in the GPP values (sd = 3.2): the smaller the variance in the values of the dependent variable, the more difficult it is to map them significantly by the variance of another variable. 
+
+# Exercise 2:
+## Model Algorith:
+
+```{r}
+mod_pred <- c(colnames(vars)[1])
+R_max = 0
+AIC_old = -1
+
+  for (j in 2:(ncol(vars))) {
+    p = 0
+    for (i in 2:ncol(vars)) {
+      mod_pred[j] <- colnames(vars)[i]
+      if (length(mod_pred) < 3) {
+       mod_2 <- lm(as.formula(paste(mod_pred, collapse = "~")), data = vars) 
+      } else {
+      mod_2 <- lm(as.formula(paste(mod_pred[1], "~",paste(mod_pred[-1], collapse ="+"))), data = vars, na.action =  na.omit) }
+      R <- summary(mod_2)$r.squared
+      if (R > R_max) {
+        R_max <- R
+        p <- i
+      }
+      
+      AIC = nrow(vars)* log(sum(mod_2$residuals^2)/nrow(vars)) + 2*(length(mod_pred) + 1) # just "+1 as mod_pred also includes dependent variable.
+    }
+    mod_pred[j] <- colnames(vars)[p]
+    if (AIC > AIC_old & AIC_old >0) {
+      mod_pred <- mod_pred[-length(mod_pred)]
+      break
+    } else {
+      AIC_old <- AIC
+    }
+  } 
+
+mod_fin<- lm(paste(mod_pred[1], " ~ ", paste(mod_pred[-1], collapse = " + ")), data = vars)
+summary(mod_fin)
+
+```
+
+## Visualisation:
+
+```{r}
+plot(x = mod_fin$fitted.values , y = vars[as.numeric(rownames(mod_fin$model)),1], xlim = c(-5,15), ylim = c(-5,15), main = "Final Model", sub = paste(paste("R^2 =", round(summary(mod_fin)$r.squared, digits = 3)), paste("RMSE =", round(sqrt(mean(summary(mod_fin)$residuals^2)), digits = 3)), collapse = ", "), xlab = "Ŷ", ylab = "Y", col = rgb(0,0,0, alpha = 0.1), pch = 16)
+abline(a= 0, b=1, col = "darkgreen")
+
+```
+
+## Interpretation: 
+I got the following model:
+
+```{r}
+paste(mod_pred[1], " ~ ", paste(mod_pred[-1], collapse = " + "))
+
+```
+My analysis is again based on the equation given in exercise 1.
+After PPFD, which achieved the highest R^2 value in the univariate regression, the long-wave radiation variable was added to the bivariate regression. This is interesting because the univariate regression with the long-wave radiation variable only had a low R^2 value of 0.17. Conversely, this could mean that variables that yielded higher R^2 values in the univariate regression – shortwave radiation, air temperature – correlate strongly with PPFD, so that they contribute little ‘new variance’ to the model. (With regard to the influence of temperature, this would support my alternative explanatory approach from above, namely that it correlates with GPP because it also correlates with solar radiation.) The third explanatory variable is the vapour pressure deficit, followed by air temperature and shortwave radiation.
